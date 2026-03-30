@@ -151,7 +151,7 @@ echo "Installing required R packages..."
 
 R -q -e "install.packages(c(
   'shiny',
-  'r6',
+  'R6',
   'httr2',
   'tidyverse',
   'jsonlite',
@@ -233,6 +233,14 @@ services:
 
 volumes:
   postgres_data:
+EOF
+
+echo "Creating gitignor..."
+
+cat <<EOF >.gitignore
+*renv*
+*.sqlite
+*.env
 EOF
 
 echo "Repository setup complete."
