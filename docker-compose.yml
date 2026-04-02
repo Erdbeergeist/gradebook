@@ -13,16 +13,27 @@ services:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gradebook"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build: ./backend
+    restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/gradebook
     ports:
       - "8000:8000"
 
   frontend:
     build: ./frontend
+    platform: linux/amd64
+    restart: unless-stopped
     depends_on:
       - backend
     ports:
