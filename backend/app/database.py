@@ -1,8 +1,32 @@
+from collections.abc import Generator
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-DATABASE_URL = "postgresql+psycopg2://postgres:postgres@db:5432/gradebook"
+from app.config import get_settings
+from app.models import Base
 
-engine = create_engine(DATABASE_URL)
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+settings = get_settings()
+
+engine = create_engine(
+    settings.database_url,
+    future=True,
+    pool_pre_ping=True,
+)
+
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+    class_=Session,
+)
+
+
+def get_db_session() -> Generator[Session, None, None]:
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
