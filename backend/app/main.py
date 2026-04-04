@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.routers import schools
+from app.routers import schools, teachers
 
 settings = get_settings()
 
@@ -18,3 +18,4 @@ def health() -> dict[str, str]:
 
 
 app.include_router(schools.router)
+app.include_router(teachers.router)

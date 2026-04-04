@@ -37,9 +37,13 @@ def test_list_schools(client: TestClient) -> None:
 
     body = response.json()
     assert isinstance(body, list)
-    assert len(body) == 2
-    assert body[0]["name"] == "School A"
-    assert body[1]["name"] == "School B"
+    # 2 inserted now 1 in conftest.py
+    assert len(body) == 3
+
+    names = [school["name"] for school in body]
+    assert "Test School" in names
+    assert "School A" in names
+    assert "School B" in names
 
 
 def test_get_school(client: TestClient) -> None:

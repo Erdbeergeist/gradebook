@@ -28,8 +28,8 @@ def get_current_user() -> CurrentUserContext:
     For now it returns a fixed active school admin context.
     """
     return CurrentUserContext(
-        user_id=uuid4(),
-        school_id=None,
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        school_id=UUID("00000000-0000-0000-0000-000000000100"),
         role=ROLE_SUPERUSER,
         is_active=True,
     )
