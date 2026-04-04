@@ -1,4 +1,5 @@
 from .base import Base
+from .users import User
 from .schools import School
 from .teachers import Teacher
 from .students import Student

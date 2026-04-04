@@ -12,6 +12,13 @@ class Teacher(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False
     )
 
+    user_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+        unique=True,
+    )
+
     name = mapped_column(String, nullable=False)
 
     school = relationship("School", back_populates="teachers")

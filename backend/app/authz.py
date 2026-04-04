@@ -1,0 +1,7 @@
+ROLE_SCHOOL_ADMIN = "school_admin"
+ROLE_TEACHER = "teacher"
+
+VALID_ROLES = {
+    ROLE_SCHOOL_ADMIN,
+    ROLE_TEACHER,
+}
