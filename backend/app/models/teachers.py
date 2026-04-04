@@ -9,7 +9,7 @@ class Teacher(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "teachers"
 
     school_id = mapped_column(
-        UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False, index=True
     )
 
     user_id = mapped_column(
@@ -23,3 +23,4 @@ class Teacher(Base, UUIDMixin, TimestampMixin):
 
     school = relationship("School", back_populates="teachers")
     classes = relationship("Class", back_populates="teacher")
+    user = relationship("User", back_populates="teacher")
