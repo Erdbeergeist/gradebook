@@ -8,3 +8,16 @@ from .enrollments import Enrollment
 from .exams import Exam
 from .exam_results import ExamResult
 from .grading_schemes import GradingScheme
+
+__all__ = [
+    "Base",
+    "School",
+    "User",
+    "Teacher",
+    "Student",
+    "Class",
+    "Enrollment",
+    "Exam",
+    "ExamResult",
+    "GradingScheme",
+]

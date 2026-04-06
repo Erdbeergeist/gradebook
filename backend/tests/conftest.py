@@ -1,14 +1,13 @@
-from collections.abc import Generator
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal, engine, get_db_session
 from app.dependencies import CurrentUserContext, get_current_user
 from app.main import app
 from app.models.schools import School
+from app.database import SessionLocal, engine, get_db_session
 
 
 TEST_SUPERUSER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -16,7 +15,7 @@ TEST_SCHOOL_ID = UUID("00000000-0000-0000-0000-000000000100")
 
 
 @pytest.fixture
-def db_session() -> Generator[Session, None, None]:
+def db_session():
     connection = engine.connect()
     transaction = connection.begin()
     session = SessionLocal(bind=connection)
@@ -52,13 +51,12 @@ def seeded_school(db_session: Session) -> School:
 
 
 @pytest.fixture
-def client(
-    db_session: Session,
-    test_user: CurrentUserContext,
-    seeded_school: School,
-) -> Generator[TestClient, None, None]:
-    def override_get_db_session() -> Generator[Session, None, None]:
-        yield db_session
+def client(db_session: Session, test_user: CurrentUserContext, seeded_school: School):
+    def override_get_db_session():
+        try:
+            yield db_session
+        finally:
+            pass
 
     def override_get_current_user() -> CurrentUserContext:
         return test_user
@@ -67,7 +65,6 @@ def client(
     app.dependency_overrides[get_current_user] = override_get_current_user
 
     try:
-        with TestClient(app) as test_client:
-            yield test_client
+        yield TestClient(app)
     finally:
         app.dependency_overrides.clear()

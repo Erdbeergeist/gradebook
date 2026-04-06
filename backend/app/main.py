@@ -1,7 +1,16 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.routers import schools, teachers, students
+from app.models import enrollments
+from app.routers import (
+    schools,
+    teachers,
+    students,
+    classes,
+    enrollments,
+    exams,
+    exam_results,
+)
 
 settings = get_settings()
 
@@ -20,3 +29,7 @@ def health() -> dict[str, str]:
 app.include_router(schools.router)
 app.include_router(teachers.router)
 app.include_router(students.router)
+app.include_router(classes.router)
+app.include_router(enrollments.router)
+app.include_router(exams.router)
+app.include_router(exam_results.router)

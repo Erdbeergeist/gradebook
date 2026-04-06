@@ -9,10 +9,11 @@ class Class(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "classes"
 
     school_id = mapped_column(
-        UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False, index=True
     )
+
     teacher_id = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teachers.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("teachers.id"), nullable=False, index=True
     )
 
     name = mapped_column(String, nullable=False)
