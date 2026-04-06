@@ -26,15 +26,34 @@ def create_exam(
             detail="Current user is not associated with a school.",
         )
 
-    exam = exams_service.create_exam(
+    result, exam = exams_service.create_exam(
         db=db,
         school_id=current_user.school_id,
         payload=payload,
     )
-    if exam is None:
+
+    if result == "class_not_found":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Class not found.",
+        )
+
+    if result == "grading_schema_not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Grading schema not found.",
+        )
+
+    if result == "grading_schema_teacher_mismatch":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Grading schema teacher does not match the class teacher.",
+        )
+
+    if result == "points_schema_max_points_mismatch":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Exam max_points must equal grading schema max_points for points-based schemas.",
         )
 
     return exam

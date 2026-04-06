@@ -10,6 +10,7 @@ from app.routers import (
     enrollments,
     exams,
     exam_results,
+    grading_schemas,
 )
 
 settings = get_settings()
@@ -33,3 +34,4 @@ app.include_router(classes.router)
 app.include_router(enrollments.router)
 app.include_router(exams.router)
 app.include_router(exam_results.router)
+app.include_router(grading_schemas.router)

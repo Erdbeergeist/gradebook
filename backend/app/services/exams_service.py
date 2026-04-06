@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.classes import Class
 from app.models.exams import Exam
+from app.models.grading_schemas import GradingSchema, GradingSchemaType
 from app.schemas.exams import ExamCreate
 
 
@@ -12,7 +13,7 @@ def create_exam(
     db: Session,
     school_id: UUID,
     payload: ExamCreate,
-) -> Exam | None:
+) -> tuple[str, Exam | None]:
     class_ = db.execute(
         select(Class)
         .where(Class.id == payload.class_id)
@@ -20,11 +21,30 @@ def create_exam(
     ).scalar_one_or_none()
 
     if class_ is None:
-        return None
+        return "class_not_found", None
+
+    grading_schema = db.execute(
+        select(GradingSchema)
+        .where(GradingSchema.id == payload.grading_schema_id)
+        .where(GradingSchema.school_id == school_id)
+    ).scalar_one_or_none()
+
+    if grading_schema is None:
+        return "grading_schema_not_found", None
+
+    if grading_schema.teacher_id != class_.teacher_id:
+        return "grading_schema_teacher_mismatch", None
+
+    if (
+        grading_schema.scheme_type == GradingSchemaType.POINTS
+        and payload.max_points != grading_schema.max_points
+    ):
+        return "points_schema_max_points_mismatch", None
 
     exam = Exam(
         school_id=school_id,
         class_id=payload.class_id,
+        grading_schema_id=payload.grading_schema_id,
         name=payload.name,
         exam_type=payload.exam_type,
         exam_type_detail=payload.exam_type_detail,
@@ -34,7 +54,7 @@ def create_exam(
     db.add(exam)
     db.commit()
     db.refresh(exam)
-    return exam
+    return "created", exam
 
 
 def get_exam(

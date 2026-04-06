@@ -34,13 +34,16 @@ class Exam(Base, UUIDMixin, TimestampMixin):
     school_id = mapped_column(
         UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False, index=True
     )
-
     class_id = mapped_column(
         UUID(as_uuid=True), ForeignKey("classes.id"), nullable=False, index=True
     )
-
+    grading_schema_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("grading_schemas.id"),
+        nullable=False,
+        index=True,
+    )
     name = mapped_column(String, nullable=False)
-
     exam_type = mapped_column(
         SqlEnum(
             ExamType,
@@ -49,7 +52,6 @@ class Exam(Base, UUIDMixin, TimestampMixin):
         ),
         nullable=False,
     )
-
     exam_type_detail = mapped_column(
         SqlEnum(
             ExamTypeDetail,
@@ -58,20 +60,12 @@ class Exam(Base, UUIDMixin, TimestampMixin):
         ),
         nullable=True,
     )
-
-    max_points = mapped_column(
-        Numeric(10, 2),
-        nullable=False,
-    )
-
-    weight = mapped_column(
-        Numeric(10, 2),
-        nullable=False,
-        default=Decimal("1.00"),
-    )
+    max_points = mapped_column(Numeric(10, 2), nullable=False)
+    weight = mapped_column(Numeric(10, 2), nullable=False, default=1.00)
 
     school = relationship("School")
     class_ = relationship("Class", back_populates="exams")
+    grading_schema = relationship("GradingSchema", back_populates="exams")
     results = relationship(
         "ExamResult", back_populates="exam", cascade="all, delete-orphan"
     )

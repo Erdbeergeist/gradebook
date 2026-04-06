@@ -7,9 +7,26 @@ from app.models.classes import Class
 from app.models.enrollments import Enrollment
 from app.models.exam_results import ExamResult, ExamResultStatus
 from app.models.exams import Exam, ExamType, ExamTypeDetail
+from app.models.grading_schemas import GradingSchema, GradingSchemaType
 from app.models.schools import School
 from app.models.students import Student
 from app.models.teachers import Teacher
+
+
+def make_percentage_grading_schema(
+    db_session, school_id, teacher_id, name="Default Percentage Schema"
+):
+    grading_schema = GradingSchema(
+        school_id=school_id,
+        teacher_id=teacher_id,
+        name=name,
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+    return grading_schema
 
 
 def test_create_exam_result(client, db_session, test_user):
@@ -20,6 +37,12 @@ def test_create_exam_result(client, db_session, test_user):
     db_session.add(teacher)
     db_session.commit()
     db_session.refresh(teacher)
+
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
 
     class_ = Class(
         school_id=test_user.school_id,
@@ -49,6 +72,7 @@ def test_create_exam_result(client, db_session, test_user):
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -94,6 +118,12 @@ def test_create_exam_result_student_not_enrolled_returns_404(
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -115,6 +145,7 @@ def test_create_exam_result_student_not_enrolled_returns_404(
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -150,6 +181,12 @@ def test_create_exam_result_points_exceed_max_returns_422(
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -178,6 +215,7 @@ def test_create_exam_result_points_exceed_max_returns_422(
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -211,6 +249,12 @@ def test_create_exam_result_duplicate_returns_409(client, db_session, test_user)
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -239,6 +283,7 @@ def test_create_exam_result_duplicate_returns_409(client, db_session, test_user)
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -284,6 +329,12 @@ def test_get_exam_result(client, db_session, test_user):
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -305,6 +356,7 @@ def test_get_exam_result(client, db_session, test_user):
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -351,6 +403,12 @@ def test_list_exam_results_for_exam(client, db_session, test_user):
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -386,6 +444,7 @@ def test_list_exam_results_for_exam(client, db_session, test_user):
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -430,6 +489,12 @@ def test_list_exam_results_for_student(client, db_session, test_user):
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -454,6 +519,7 @@ def test_list_exam_results_for_student(client, db_session, test_user):
     exam_1 = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -463,6 +529,7 @@ def test_list_exam_results_for_student(client, db_session, test_user):
     exam_2 = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Final",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,
@@ -508,6 +575,12 @@ def test_delete_exam_result(client, db_session, test_user):
     db_session.commit()
     db_session.refresh(teacher)
 
+    grading_schema = make_percentage_grading_schema(
+        db_session=db_session,
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+    )
+
     class_ = Class(
         school_id=test_user.school_id,
         teacher_id=teacher.id,
@@ -529,6 +602,7 @@ def test_delete_exam_result(client, db_session, test_user):
     exam = Exam(
         school_id=test_user.school_id,
         class_id=class_.id,
+        grading_schema_id=grading_schema.id,
         name="Midterm",
         exam_type=ExamType.WRITTEN,
         exam_type_detail=ExamTypeDetail.ESSAY,

@@ -7,7 +7,13 @@ from .classes import Class
 from .enrollments import Enrollment
 from .exams import Exam
 from .exam_results import ExamResult
-from .grading_schemes import GradingScheme
+from .grade_catalogs import GradeCatalog, GradeCatalogItem
+from .grading_schemas import (
+    GradingSchema,
+    GradingSchemaGrade,
+    GradingSchemaOverride,
+    GradingSchemaRange,
+)
 
 __all__ = [
     "Base",
@@ -19,5 +25,10 @@ __all__ = [
     "Enrollment",
     "Exam",
     "ExamResult",
-    "GradingScheme",
+    "GradeCatalog",
+    "GradeCatalogItem",
+    "GradingSchema",
+    "GradingSchemaGrade",
+    "GradingSchemaRange",
+    "GradingSchemaOverride",
 ]
