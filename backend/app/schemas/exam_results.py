@@ -48,5 +48,7 @@ class ExamResultRead(BaseModel):
     comment: str | None
     status: ExamResultStatus | None
     graded_at: datetime | None
+    resolved_input_value: Decimal | None
+    resolved_grade_label: str | None
     created_at: datetime
     updated_at: datetime

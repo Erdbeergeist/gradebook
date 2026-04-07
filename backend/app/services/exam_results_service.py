@@ -1,21 +1,65 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.classes import Class
 from app.models.enrollments import Enrollment
 from app.models.exam_results import ExamResult
 from app.models.exams import Exam
+from app.models.grading_schemas import (
+    GradingSchema,
+    GradingSchemaOverride,
+    GradingSchemaRange,
+)
 from app.models.students import Student
-from app.schemas.exam_results import ExamResultCreate
+from app.schemas.exam_results import ExamResultCreate, ExamResultRead
+from app.services.grading_engine import resolve_grade_for_exam_result
+
+
+def _exam_result_load_options():
+    return (
+        joinedload(ExamResult.exam)
+        .joinedload(Exam.grading_schema)
+        .selectinload(GradingSchema.ranges)
+        .joinedload(GradingSchemaRange.grade),
+        joinedload(ExamResult.exam)
+        .joinedload(Exam.grading_schema)
+        .selectinload(GradingSchema.overrides)
+        .joinedload(GradingSchemaOverride.grade),
+    )
+
+
+def _to_exam_result_read(exam_result: ExamResult) -> ExamResultRead:
+    exam = exam_result.exam
+    grading_schema = exam.grading_schema
+
+    resolved_input_value, resolved_grade_label = resolve_grade_for_exam_result(
+        exam=exam,
+        grading_schema=grading_schema,
+        exam_result=exam_result,
+    )
+
+    return ExamResultRead(
+        id=exam_result.id,
+        exam_id=exam_result.exam_id,
+        student_id=exam_result.student_id,
+        points=exam_result.points,
+        comment=exam_result.comment,
+        status=exam_result.status,
+        graded_at=exam_result.graded_at,
+        resolved_input_value=resolved_input_value,
+        resolved_grade_label=resolved_grade_label,
+        created_at=exam_result.created_at,
+        updated_at=exam_result.updated_at,
+    )
 
 
 def create_exam_result(
     db: Session,
     school_id,
     payload: ExamResultCreate,
-) -> tuple[str, ExamResult | None]:
+) -> tuple[str, ExamResultRead | None]:
     exam = db.execute(
         select(Exam)
         .where(Exam.id == payload.exam_id)
@@ -63,36 +107,52 @@ def create_exam_result(
     )
     db.add(exam_result)
     db.commit()
-    db.refresh(exam_result)
-    return "created", exam_result
 
-
-def get_exam_result(db: Session, school_id, exam_result_id):
     statement = (
         select(ExamResult)
+        .options(*_exam_result_load_options())
+        .where(ExamResult.id == exam_result.id)
+    )
+    created = db.execute(statement).scalar_one()
+    return "created", _to_exam_result_read(created)
+
+
+def get_exam_result(db: Session, school_id, exam_result_id) -> ExamResultRead | None:
+    statement = (
+        select(ExamResult)
+        .options(*_exam_result_load_options())
         .join(Exam, ExamResult.exam_id == Exam.id)
         .join(Student, ExamResult.student_id == Student.id)
         .where(ExamResult.id == exam_result_id)
         .where(Exam.school_id == school_id)
         .where(Student.school_id == school_id)
     )
-    return db.execute(statement).scalar_one_or_none()
+    exam_result = db.execute(statement).scalar_one_or_none()
+    if exam_result is None:
+        return None
+
+    return _to_exam_result_read(exam_result)
 
 
-def list_exam_results_for_exam(db: Session, school_id, exam_id):
+def list_exam_results_for_exam(db: Session, school_id, exam_id) -> list[ExamResultRead]:
     statement = (
         select(ExamResult)
+        .options(*_exam_result_load_options())
         .join(Exam, ExamResult.exam_id == Exam.id)
         .where(ExamResult.exam_id == exam_id)
         .where(Exam.school_id == school_id)
         .order_by(ExamResult.created_at.asc())
     )
-    return list(db.execute(statement).scalars().all())
+    exam_results = list(db.execute(statement).scalars().all())
+    return [_to_exam_result_read(item) for item in exam_results]
 
 
-def list_exam_results_for_student(db: Session, school_id, student_id):
+def list_exam_results_for_student(
+    db: Session, school_id, student_id
+) -> list[ExamResultRead]:
     statement = (
         select(ExamResult)
+        .options(*_exam_result_load_options())
         .join(Exam, ExamResult.exam_id == Exam.id)
         .join(Student, ExamResult.student_id == Student.id)
         .where(ExamResult.student_id == student_id)
@@ -100,18 +160,25 @@ def list_exam_results_for_student(db: Session, school_id, student_id):
         .where(Student.school_id == school_id)
         .order_by(ExamResult.created_at.asc())
     )
-    return list(db.execute(statement).scalars().all())
+    exam_results = list(db.execute(statement).scalars().all())
+    return [_to_exam_result_read(item) for item in exam_results]
 
 
-def delete_exam_result(db: Session, school_id, exam_result_id):
-    exam_result = get_exam_result(
-        db=db,
-        school_id=school_id,
-        exam_result_id=exam_result_id,
+def delete_exam_result(db: Session, school_id, exam_result_id) -> ExamResultRead | None:
+    statement = (
+        select(ExamResult)
+        .options(*_exam_result_load_options())
+        .join(Exam, ExamResult.exam_id == Exam.id)
+        .join(Student, ExamResult.student_id == Student.id)
+        .where(ExamResult.id == exam_result_id)
+        .where(Exam.school_id == school_id)
+        .where(Student.school_id == school_id)
     )
+    exam_result = db.execute(statement).scalar_one_or_none()
     if exam_result is None:
         return None
 
+    response_model = _to_exam_result_read(exam_result)
     db.delete(exam_result)
     db.commit()
-    return exam_result
+    return response_model

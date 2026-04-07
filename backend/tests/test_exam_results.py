@@ -11,6 +11,12 @@ from app.models.grading_schemas import GradingSchema, GradingSchemaType
 from app.models.schools import School
 from app.models.students import Student
 from app.models.teachers import Teacher
+from app.models.grading_schemas import (
+    GradingSchema,
+    GradingSchemaType,
+    GradingSchemaGrade,
+    GradingSchemaRange,
+)
 
 
 def make_percentage_grading_schema(
@@ -633,3 +639,93 @@ def test_delete_exam_result_not_found(client):
     response = client.delete("/exam-results/00000000-0000-0000-0000-000000000999")
     assert response.status_code == 404
     assert response.json()["detail"] == "Exam result not found."
+
+
+def test_get_exam_result_includes_resolved_grade_label(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Default Percentage Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    grade = GradingSchemaGrade(
+        grading_schema_id=grading_schema.id,
+        label="2",
+        sort_order=10,
+    )
+    db_session.add(grade)
+    db_session.commit()
+    db_session.refresh(grade)
+
+    range_rule = GradingSchemaRange(
+        grading_schema_id=grading_schema.id,
+        grade_id=grade.id,
+        min_value=Decimal("80.00"),
+        max_value=Decimal("90.00"),
+        min_inclusive=True,
+        max_inclusive=False,
+    )
+    db_session.add(range_rule)
+    db_session.commit()
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    student = Student(
+        school_id=test_user.school_id,
+        first_name="Ada",
+        last_name="Lovelace",
+    )
+    db_session.add(student)
+    db_session.commit()
+    db_session.refresh(student)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    exam_result = ExamResult(
+        exam_id=exam.id,
+        student_id=student.id,
+        points=Decimal("87.50"),
+        status=ExamResultStatus.PRESENT,
+    )
+    db_session.add(exam_result)
+    db_session.commit()
+    db_session.refresh(exam_result)
+
+    response = client.get(f"/exam-results/{exam_result.id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert Decimal(data["resolved_input_value"]) == Decimal("87.50")
+    assert data["resolved_grade_label"] == "2"
