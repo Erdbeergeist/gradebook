@@ -39,7 +39,7 @@ class ExamCreate(BaseModel):
     class_id: UUID
     name: str = Field(min_length=1, max_length=255)
     exam_type: ExamType
-    grading_schema_id: UUID
+    template_grading_schema_id: UUID
     exam_type_detail: ExamTypeDetail | None = None
     max_points: Decimal = Field(gt=0)
     weight: Decimal = Field(default=Decimal("1.00"), gt=0)

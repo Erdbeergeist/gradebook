@@ -40,7 +40,7 @@ def test_create_exam(client, db_session, test_user):
         "/exams",
         json={
             "class_id": str(class_.id),
-            "grading_schema_id": str(grading_schema.id),
+            "template_grading_schema_id": str(grading_schema.id),
             "name": "Midterm",
             "exam_type": "written",
             "exam_type_detail": "essay",
@@ -52,7 +52,14 @@ def test_create_exam(client, db_session, test_user):
     assert response.status_code == 201
     data = response.json()
     assert data["class_id"] == str(class_.id)
-    assert data["grading_schema_id"] == str(grading_schema.id)
+    assert data["grading_schema_id"] != str(grading_schema.id)
+
+    cloned_schema = db_session.get(GradingSchema, data["grading_schema_id"])
+    assert cloned_schema is not None
+    assert cloned_schema.teacher_id == teacher.id
+    assert cloned_schema.is_template is False
+    assert cloned_schema.is_system is False
+    assert cloned_schema.source_schema_id == grading_schema.id
     assert data["name"] == "Midterm"
     assert data["exam_type"] == "written"
     assert data["exam_type_detail"] == "essay"
@@ -106,7 +113,7 @@ def test_create_exam_with_other_school_class_returns_404(client, db_session, tes
         "/exams",
         json={
             "class_id": str(other_class.id),
-            "grading_schema_id": str(grading_schema.id),
+            "template_grading_schema_id": str(grading_schema.id),
             "name": "Midterm",
             "exam_type": "written",
             "exam_type_detail": "essay",
@@ -143,7 +150,7 @@ def test_create_exam_with_unknown_grading_schema_returns_404(
         "/exams",
         json={
             "class_id": str(class_.id),
-            "grading_schema_id": "00000000-0000-0000-0000-000000000999",
+            "template_grading_schema_id": "00000000-0000-0000-0000-000000000999",
             "name": "Midterm",
             "exam_type": "written",
             "exam_type_detail": "essay",
@@ -196,7 +203,7 @@ def test_create_exam_with_grading_schema_from_other_teacher_returns_422(
         "/exams",
         json={
             "class_id": str(class_.id),
-            "grading_schema_id": str(grading_schema.id),
+            "template_grading_schema_id": str(grading_schema.id),
             "name": "Midterm",
             "exam_type": "written",
             "exam_type_detail": "essay",
@@ -247,7 +254,7 @@ def test_create_exam_with_points_schema_max_points_mismatch_returns_422(
         "/exams",
         json={
             "class_id": str(class_.id),
-            "grading_schema_id": str(grading_schema.id),
+            "template_grading_schema_id": str(grading_schema.id),
             "name": "Quiz",
             "exam_type": "written",
             "exam_type_detail": "short_answer",

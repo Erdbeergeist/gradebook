@@ -7,6 +7,7 @@ from app.models.classes import Class
 from app.models.exams import Exam
 from app.models.grading_schemas import GradingSchema, GradingSchemaType
 from app.schemas.exams import ExamCreate
+from app.services import grading_schemas_service
 
 
 def create_exam(
@@ -25,7 +26,7 @@ def create_exam(
 
     grading_schema = db.execute(
         select(GradingSchema)
-        .where(GradingSchema.id == payload.grading_schema_id)
+        .where(GradingSchema.id == payload.template_grading_schema_id)
         .where(GradingSchema.school_id == school_id)
     ).scalar_one_or_none()
 
@@ -41,10 +42,28 @@ def create_exam(
     ):
         return "points_schema_max_points_mismatch", None
 
+    clone_result, cloned_schema = grading_schemas_service.clone_grading_schema(
+        db=db,
+        school_id=school_id,
+        source_schema_id=grading_schema.id,
+        teacher_id=class_.teacher_id,
+        name=grading_schema.name,
+        as_template=False,
+    )
+
+    if clone_result == "source_schema_not_found":
+        return "grading_schema_not_found", None
+
+    if clone_result in {"teacher_not_found", "source_schema_not_clonable"}:
+        return "grading_schema_not_found", None
+
+    if cloned_schema is None:
+        return "grading_schema_not_found", None
+
     exam = Exam(
         school_id=school_id,
         class_id=payload.class_id,
-        grading_schema_id=payload.grading_schema_id,
+        grading_schema_id=cloned_schema.id,
         name=payload.name,
         exam_type=payload.exam_type,
         exam_type_detail=payload.exam_type_detail,

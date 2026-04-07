@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -17,6 +18,101 @@ from app.models.grading_schemas import (
 from app.models.teachers import Teacher
 from app.schemas.grading_schemas import GradingSchemaCreate
 from app.models.grading_schemas import GradingSchema
+from app.schemas.grading_schemas import GradingSchemaCloneRequest
+
+
+def _grading_schema_load_options():
+    return (
+        selectinload(GradingSchema.grades),
+        selectinload(GradingSchema.ranges),
+        selectinload(GradingSchema.overrides),
+    )
+
+
+def clone_grading_schema(
+    db: Session,
+    *,
+    school_id: UUID,
+    source_schema_id: UUID,
+    teacher_id: UUID,
+    name: str | None = None,
+    as_template: bool = False,
+) -> tuple[str, GradingSchema | None]:
+    source_schema = db.execute(
+        select(GradingSchema)
+        .options(*_grading_schema_load_options())
+        .where(GradingSchema.id == source_schema_id)
+        .where(GradingSchema.school_id == school_id)
+    ).scalar_one_or_none()
+
+    if source_schema is None:
+        return "source_schema_not_found", None
+
+    if not can_clone_schema(source_schema):
+        return "source_schema_not_clonable", None
+
+    teacher = db.execute(
+        select(Teacher)
+        .where(Teacher.id == teacher_id)
+        .where(Teacher.school_id == school_id)
+    ).scalar_one_or_none()
+    if teacher is None:
+        return "teacher_not_found", None
+
+    cloned_schema = GradingSchema(
+        school_id=school_id,
+        teacher_id=teacher_id,
+        name=name if name is not None else source_schema.name,
+        scheme_type=source_schema.scheme_type,
+        max_points=source_schema.max_points,
+        is_active=source_schema.is_active,
+        is_template=as_template,
+        is_system=False,
+        source_schema_id=source_schema.id,
+    )
+    db.add(cloned_schema)
+    db.flush()
+
+    old_grade_id_to_new_grade_id: dict[UUID, UUID] = {}
+
+    for source_grade in source_schema.grades:
+        cloned_grade = GradingSchemaGrade(
+            grading_schema_id=cloned_schema.id,
+            label=source_grade.label,
+            sort_order=source_grade.sort_order,
+        )
+        db.add(cloned_grade)
+        db.flush()
+        old_grade_id_to_new_grade_id[source_grade.id] = cloned_grade.id
+
+    for source_range in source_schema.ranges:
+        cloned_range = GradingSchemaRange(
+            grading_schema_id=cloned_schema.id,
+            grade_id=old_grade_id_to_new_grade_id[source_range.grade_id],
+            min_value=source_range.min_value,
+            max_value=source_range.max_value,
+            min_inclusive=source_range.min_inclusive,
+            max_inclusive=source_range.max_inclusive,
+        )
+        db.add(cloned_range)
+
+    for source_override in source_schema.overrides:
+        cloned_override = GradingSchemaOverride(
+            grading_schema_id=cloned_schema.id,
+            grade_id=old_grade_id_to_new_grade_id[source_override.grade_id],
+            input_value=source_override.input_value,
+        )
+        db.add(cloned_override)
+
+    db.commit()
+
+    cloned_schema = db.execute(
+        select(GradingSchema)
+        .options(*_grading_schema_load_options())
+        .where(GradingSchema.id == cloned_schema.id)
+    ).scalar_one()
+
+    return "created", cloned_schema
 
 
 def _domain_upper_bound(payload: GradingSchemaCreate) -> Decimal:
