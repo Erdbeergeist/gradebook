@@ -24,3 +24,4 @@ class Teacher(Base, UUIDMixin, TimestampMixin):
     school = relationship("School", back_populates="teachers")
     classes = relationship("Class", back_populates="teacher")
     user = relationship("User", back_populates="teacher")
+    grading_schemas = relationship("GradingSchema", back_populates="teacher")

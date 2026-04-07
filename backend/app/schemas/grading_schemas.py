@@ -84,6 +84,35 @@ class GradingSchemaCreate(BaseModel):
         return self
 
 
+class GradingSchemaUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    scheme_type: GradingSchemaType
+    max_points: Decimal | None = None
+    grade_catalog_code: str | None = None
+    grades: list[GradingSchemaGradeInput] = Field(default_factory=list)
+    ranges: list[GradingSchemaRangeInput] = Field(default_factory=list)
+    overrides: list[GradingSchemaOverrideInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_scheme_shape(self) -> "GradingSchemaUpdate":
+        if (
+            self.scheme_type == GradingSchemaType.PERCENTAGE
+            and self.max_points is not None
+        ):
+            raise ValueError("max_points must be null for percentage grading schemas.")
+
+        if self.scheme_type == GradingSchemaType.POINTS:
+            if self.max_points is None or self.max_points <= 0:
+                raise ValueError(
+                    "max_points must be provided and > 0 for points grading schemas."
+                )
+
+        if self.grade_catalog_code is None and len(self.grades) == 0:
+            raise ValueError("Provide either grade_catalog_code or grades.")
+
+        return self
+
+
 class GradingSchemaGradeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -127,8 +156,26 @@ class GradingSchemaRead(BaseModel):
     scheme_type: GradingSchemaType
     max_points: Decimal | None
     is_active: bool
+    is_template: bool
+    is_system: bool
+    source_schema_id: UUID | None
     grades: list[GradingSchemaGradeRead]
     ranges: list[GradingSchemaRangeRead]
     overrides: list[GradingSchemaOverrideRead]
     created_at: datetime
     updated_at: datetime
+
+
+class GradingSchemaCloneRequest(BaseModel):
+    teacher_id: UUID
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    as_template: bool = False
+
+
+class GradingSchemaPromoteToTemplateRequest(BaseModel):
+    teacher_id: UUID
+    name: str = Field(min_length=1, max_length=255)
+
+
+class GradingSchemaReplaceTemplateRequest(BaseModel):
+    source_schema_id: UUID

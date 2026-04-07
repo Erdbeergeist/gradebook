@@ -4,12 +4,12 @@ import enum
 
 from sqlalchemy import (
     Boolean,
-    Enum as SqlEnum,
     ForeignKey,
     Integer,
     Numeric,
     String,
     UniqueConstraint,
+    Enum as SqlEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import mapped_column, relationship
@@ -47,9 +47,32 @@ class GradingSchema(Base, UUIDMixin, TimestampMixin):
         nullable=False,
     )
     max_points = mapped_column(Numeric(10, 2), nullable=True)
+
     is_active = mapped_column(Boolean, nullable=False, default=True)
 
-    teacher = relationship("Teacher")
+    is_template = mapped_column(Boolean, nullable=False, default=True)
+    is_system = mapped_column(Boolean, nullable=False, default=False)
+
+    source_schema_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("grading_schemas.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    school = relationship("School")
+    teacher = relationship("Teacher", back_populates="grading_schemas")
+
+    source_schema = relationship(
+        "GradingSchema",
+        remote_side="GradingSchema.id",
+        back_populates="derived_schemas",
+    )
+    derived_schemas = relationship(
+        "GradingSchema",
+        back_populates="source_schema",
+    )
+
     grades = relationship(
         "GradingSchemaGrade",
         back_populates="grading_schema",
@@ -73,7 +96,9 @@ class GradingSchemaGrade(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "grading_schema_grades"
     __table_args__ = (
         UniqueConstraint(
-            "grading_schema_id", "label", name="uq_grading_schema_grade_label"
+            "grading_schema_id",
+            "label",
+            name="uq_grading_schema_grade_label",
         ),
         UniqueConstraint(
             "grading_schema_id",
@@ -83,6 +108,7 @@ class GradingSchemaGrade(Base, UUIDMixin, TimestampMixin):
     )
 
     grading_schema_id = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("grading_schemas.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -99,19 +125,21 @@ class GradingSchemaRange(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "grading_schema_ranges"
 
     grading_schema_id = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("grading_schemas.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     grade_id = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("grading_schema_grades.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     min_value = mapped_column(Numeric(10, 2), nullable=False)
     max_value = mapped_column(Numeric(10, 2), nullable=False)
-    min_inclusive = mapped_column(Boolean, nullable=False, default=True)
-    max_inclusive = mapped_column(Boolean, nullable=False, default=False)
+    min_inclusive = mapped_column(Boolean, nullable=False)
+    max_inclusive = mapped_column(Boolean, nullable=False)
 
     grading_schema = relationship("GradingSchema", back_populates="ranges")
     grade = relationship("GradingSchemaGrade", back_populates="ranges")
@@ -128,11 +156,13 @@ class GradingSchemaOverride(Base, UUIDMixin, TimestampMixin):
     )
 
     grading_schema_id = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("grading_schemas.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     grade_id = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("grading_schema_grades.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

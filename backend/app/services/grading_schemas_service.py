@@ -16,6 +16,7 @@ from app.models.grading_schemas import (
 )
 from app.models.teachers import Teacher
 from app.schemas.grading_schemas import GradingSchemaCreate
+from app.models.grading_schemas import GradingSchema
 
 
 def _domain_upper_bound(payload: GradingSchemaCreate) -> Decimal:
@@ -229,3 +230,41 @@ def list_grade_catalogs(db: Session):
         .order_by(GradeCatalog.created_at.asc())
     )
     return list(db.execute(statement).scalars().all())
+
+
+def is_system_schema(schema: GradingSchema) -> bool:
+    return schema.is_system
+
+
+def is_template_schema(schema: GradingSchema) -> bool:
+    return schema.is_template
+
+
+def is_exam_schema(schema: GradingSchema) -> bool:
+    return not schema.is_template
+
+
+def can_edit_schema(schema: GradingSchema) -> bool:
+    return not schema.is_system
+
+
+def can_delete_schema(schema: GradingSchema) -> bool:
+    return schema.is_template and not schema.is_system
+
+
+def can_clone_schema(schema: GradingSchema) -> bool:
+    return True
+
+
+def can_promote_schema_to_template(schema: GradingSchema) -> bool:
+    return not schema.is_template and not schema.is_system
+
+
+def can_replace_template(
+    target_schema: GradingSchema, source_schema: GradingSchema
+) -> bool:
+    return (
+        target_schema.is_template
+        and not target_schema.is_system
+        and not source_schema.is_system
+    )

@@ -235,3 +235,59 @@ def test_list_grading_schemas_filtered_by_teacher_id(client, db_session, test_us
     data = response.json()
     assert len(data) == 1
     assert data[0]["teacher_id"] == str(teacher_1.id)
+
+
+def test_create_grading_schema_sets_template_flags(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    response = client.post(
+        "/grading-schemas",
+        json={
+            "teacher_id": str(teacher.id),
+            "name": "Default German",
+            "scheme_type": "percentage",
+            "grade_catalog_code": "de_standard",
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["is_template"] is True
+    assert data["is_system"] is False
+    assert data["source_schema_id"] is None
+
+
+def test_list_grading_schemas_exposes_template_flags(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    response = client.post(
+        "/grading-schemas",
+        json={
+            "teacher_id": str(teacher.id),
+            "name": "Schema One",
+            "scheme_type": "percentage",
+            "grade_catalog_code": "de_standard",
+        },
+    )
+    assert response.status_code == 201
+
+    response = client.get(f"/grading-schemas?teacher_id={teacher.id}")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["is_template"] is True
+    assert data[0]["is_system"] is False
+    assert data[0]["source_schema_id"] is None
