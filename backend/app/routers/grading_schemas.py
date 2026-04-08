@@ -9,6 +9,7 @@ from app.schemas.grading_schemas import (
     GradeCatalogRead,
     GradingSchemaCreate,
     GradingSchemaRead,
+    GradingSchemaUpdate,
 )
 from app.services import grading_schemas_service
 
@@ -42,6 +43,76 @@ def create_grading_schema(
 
     if result == "teacher_not_found":
         raise HTTPException(status_code=404, detail="Teacher not found.")
+    if result == "grade_catalog_not_found":
+        raise HTTPException(status_code=404, detail="Grade catalog not found.")
+    if result == "duplicate_grade_labels":
+        raise HTTPException(
+            status_code=422,
+            detail="Grade labels must be unique within a grading schema.",
+        )
+    if result == "duplicate_grade_sort_orders":
+        raise HTTPException(
+            status_code=422,
+            detail="Grade sort_order values must be unique within a grading schema.",
+        )
+    if result == "unknown_range_grade_label":
+        raise HTTPException(
+            status_code=422, detail="A range references an unknown grade label."
+        )
+    if result == "range_out_of_domain":
+        raise HTTPException(
+            status_code=422,
+            detail="A range value is outside the grading schema domain.",
+        )
+    if result == "unknown_override_grade_label":
+        raise HTTPException(
+            status_code=422, detail="An override references an unknown grade label."
+        )
+    if result == "override_out_of_domain":
+        raise HTTPException(
+            status_code=422,
+            detail="An override value is outside the grading schema domain.",
+        )
+    if result == "duplicate_override_input_values":
+        raise HTTPException(
+            status_code=422,
+            detail="Override input values must be unique within a grading schema.",
+        )
+    if result == "overlapping_ranges":
+        raise HTTPException(
+            status_code=422, detail="Grading schema ranges must not overlap."
+        )
+
+    return grading_schema
+
+
+@router.put("/{grading_schema_id}", response_model=GradingSchemaRead)
+def update_grading_schema(
+    grading_schema_id: UUID,
+    payload: GradingSchemaUpdate,
+    db: DbSession,
+    current_user: ActiveUser,
+):
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current user is not associated with a school.",
+        )
+
+    result, grading_schema = grading_schemas_service.update_grading_schema(
+        db=db,
+        school_id=current_user.school_id,
+        grading_schema_id=grading_schema_id,
+        payload=payload,
+    )
+
+    if result == "grading_schema_not_found":
+        raise HTTPException(status_code=404, detail="Grading schema not found.")
+    if result == "grading_schema_not_editable":
+        raise HTTPException(
+            status_code=403,
+            detail="System grading schemas cannot be edited.",
+        )
     if result == "grade_catalog_not_found":
         raise HTTPException(status_code=404, detail="Grade catalog not found.")
     if result == "duplicate_grade_labels":

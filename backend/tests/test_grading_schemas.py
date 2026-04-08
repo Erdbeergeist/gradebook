@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from app.models.schools import School
 from app.models.teachers import Teacher
+from app.models.grading_schemas import GradingSchema, GradingSchemaType
 
 
 def test_list_grade_catalogs(client):
@@ -291,3 +292,332 @@ def test_list_grading_schemas_exposes_template_flags(client, db_session, test_us
     assert data[0]["is_template"] is True
     assert data[0]["is_system"] is False
     assert data[0]["source_schema_id"] is None
+
+
+def test_update_grading_schema(client, db_session, test_user, seeded_school):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Original Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_active=True,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    response = client.put(
+        f"/grading-schemas/{grading_schema.id}",
+        json={
+            "name": "Updated Schema",
+            "scheme_type": "percentage",
+            "max_points": None,
+            "grades": [
+                {"label": "1", "sort_order": 10},
+                {"label": "2", "sort_order": 20},
+            ],
+            "ranges": [
+                {
+                    "grade_label": "1",
+                    "min_value": "90.00",
+                    "max_value": "100.00",
+                    "min_inclusive": True,
+                    "max_inclusive": True,
+                },
+                {
+                    "grade_label": "2",
+                    "min_value": "80.00",
+                    "max_value": "90.00",
+                    "min_inclusive": True,
+                    "max_inclusive": False,
+                },
+            ],
+            "overrides": [
+                {
+                    "input_value": "92.00",
+                    "grade_label": "1",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["id"] == str(grading_schema.id)
+    assert data["name"] == "Updated Schema"
+    assert data["scheme_type"] == "percentage"
+    assert data["max_points"] is None
+    assert data["is_template"] is False
+    assert data["is_system"] is False
+
+    assert len(data["grades"]) == 2
+    assert len(data["ranges"]) == 2
+    assert len(data["overrides"]) == 1
+
+    labels = {item["label"] for item in data["grades"]}
+    assert labels == {"1", "2"}
+
+    db_session.refresh(grading_schema)
+    assert grading_schema.name == "Updated Schema"
+
+
+def test_update_system_grading_schema_returns_403(
+    client, db_session, test_user, seeded_school
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="System Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_active=True,
+        is_template=True,
+        is_system=True,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    response = client.put(
+        f"/grading-schemas/{grading_schema.id}",
+        json={
+            "name": "Attempted Update",
+            "scheme_type": "percentage",
+            "max_points": None,
+            "grades": [
+                {"label": "1", "sort_order": 10},
+            ],
+            "ranges": [],
+            "overrides": [],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "System grading schemas cannot be edited."
+
+
+def test_update_grading_schema_rejects_duplicate_grade_labels(
+    client, db_session, test_user, seeded_school
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Editable Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_active=True,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    response = client.put(
+        f"/grading-schemas/{grading_schema.id}",
+        json={
+            "name": "Editable Schema",
+            "scheme_type": "percentage",
+            "max_points": None,
+            "grades": [
+                {"label": "1", "sort_order": 10},
+                {"label": "1", "sort_order": 20},
+            ],
+            "ranges": [],
+            "overrides": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Grade labels must be unique within a grading schema."
+    )
+
+
+def test_update_grading_schema_rejects_overlapping_ranges(
+    client, db_session, test_user, seeded_school
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Editable Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_active=True,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    response = client.put(
+        f"/grading-schemas/{grading_schema.id}",
+        json={
+            "name": "Editable Schema",
+            "scheme_type": "percentage",
+            "max_points": None,
+            "grades": [
+                {"label": "1", "sort_order": 10},
+                {"label": "2", "sort_order": 20},
+            ],
+            "ranges": [
+                {
+                    "grade_label": "1",
+                    "min_value": "85.00",
+                    "max_value": "95.00",
+                    "min_inclusive": True,
+                    "max_inclusive": True,
+                },
+                {
+                    "grade_label": "2",
+                    "min_value": "90.00",
+                    "max_value": "100.00",
+                    "min_inclusive": True,
+                    "max_inclusive": True,
+                },
+            ],
+            "overrides": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Grading schema ranges must not overlap."
+
+
+def test_update_grading_schema_rejects_unknown_range_grade_label(
+    client, db_session, test_user, seeded_school
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Editable Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_active=True,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    response = client.put(
+        f"/grading-schemas/{grading_schema.id}",
+        json={
+            "name": "Editable Schema",
+            "scheme_type": "percentage",
+            "max_points": None,
+            "grades": [
+                {"label": "1", "sort_order": 10},
+            ],
+            "ranges": [
+                {
+                    "grade_label": "2",
+                    "min_value": "90.00",
+                    "max_value": "100.00",
+                    "min_inclusive": True,
+                    "max_inclusive": True,
+                },
+            ],
+            "overrides": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "A range references an unknown grade label."
+
+
+def test_update_grading_schema_rejects_duplicate_override_input_values(
+    client, db_session, test_user, seeded_school
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Editable Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_active=True,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    response = client.put(
+        f"/grading-schemas/{grading_schema.id}",
+        json={
+            "name": "Editable Schema",
+            "scheme_type": "percentage",
+            "max_points": None,
+            "grades": [
+                {"label": "1", "sort_order": 10},
+                {"label": "2", "sort_order": 20},
+            ],
+            "ranges": [],
+            "overrides": [
+                {"input_value": "92.00", "grade_label": "1"},
+                {"input_value": "92.00", "grade_label": "2"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Override input values must be unique within a grading schema."
+    )
