@@ -38,6 +38,13 @@ class ExamResultCreate(BaseModel):
         return self
 
 
+class ExamResultUpdate(BaseModel):
+    points: Decimal | None = Field(default=None, ge=0)
+    comment: str | None = Field(default=None, max_length=2000)
+    status: ExamResultStatus | None = None
+    graded_at: datetime | None = None
+
+
 class ExamResultRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

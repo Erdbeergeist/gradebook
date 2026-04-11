@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -13,7 +14,7 @@ from app.models.grading_schemas import (
     GradingSchemaRange,
 )
 from app.models.students import Student
-from app.schemas.exam_results import ExamResultCreate, ExamResultRead
+from app.schemas.exam_results import ExamResultCreate, ExamResultRead, ExamResultUpdate
 from app.services.grading_engine import resolve_grade_for_exam_result
 
 
@@ -115,6 +116,53 @@ def create_exam_result(
     )
     created = db.execute(statement).scalar_one()
     return "created", _to_exam_result_read(created)
+
+
+def update_exam_result(
+    db: Session,
+    school_id: UUID,
+    exam_result_id: UUID,
+    payload: ExamResultUpdate,
+) -> tuple[str, ExamResultRead | None]:
+    statement = (
+        select(ExamResult)
+        .join(Exam, ExamResult.exam_id == Exam.id)
+        .join(Student, ExamResult.student_id == Student.id)
+        .where(ExamResult.id == exam_result_id)
+        .where(Exam.school_id == school_id)
+        .where(Student.school_id == school_id)
+    )
+    exam_result = db.execute(statement).scalar_one_or_none()
+
+    if exam_result is None:
+        return "exam_result_not_found", None
+
+    exam = db.execute(
+        select(Exam)
+        .where(Exam.id == exam_result.exam_id)
+        .where(Exam.school_id == school_id)
+    ).scalar_one()
+
+    if payload.points is not None and payload.points > exam.max_points:
+        return "points_exceed_max", None
+
+    exam_result.points = payload.points
+    exam_result.comment = payload.comment
+    exam_result.status = payload.status
+    exam_result.graded_at = payload.graded_at
+
+    db.commit()
+    exam_result = db.execute(
+        select(ExamResult)
+        .options(joinedload(ExamResult.exam).joinedload(Exam.grading_schema))
+        .join(Exam, ExamResult.exam_id == Exam.id)
+        .join(Student, ExamResult.student_id == Student.id)
+        .where(ExamResult.id == exam_result_id)
+        .where(Exam.school_id == school_id)
+        .where(Student.school_id == school_id)
+    ).scalar_one()
+
+    return "updated", _to_exam_result_read(exam_result)
 
 
 def get_exam_result(db: Session, school_id, exam_result_id) -> ExamResultRead | None:

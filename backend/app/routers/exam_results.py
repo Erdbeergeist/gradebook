@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from app.dependencies import ActiveUser, DbSession
-from app.schemas.exam_results import ExamResultCreate, ExamResultRead
+from app.schemas.exam_results import ExamResultCreate, ExamResultRead, ExamResultUpdate
 from app.services import exam_results_service
 
 router = APIRouter(prefix="/exam-results", tags=["exam-results"])
@@ -48,6 +48,40 @@ def create_exam_result(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Exam result already exists for this student and exam.",
+        )
+    if result == "points_exceed_max":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Points cannot exceed exam max_points.",
+        )
+
+    return exam_result
+
+
+@router.put("/{exam_result_id}", response_model=ExamResultRead)
+def update_exam_result(
+    exam_result_id: UUID,
+    payload: ExamResultUpdate,
+    db: DbSession,
+    current_user: ActiveUser,
+):
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current user is not associated with a school.",
+        )
+
+    result, exam_result = exam_results_service.update_exam_result(
+        db=db,
+        school_id=current_user.school_id,
+        exam_result_id=exam_result_id,
+        payload=payload,
+    )
+
+    if result == "exam_result_not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exam result not found.",
         )
     if result == "points_exceed_max":
         raise HTTPException(
