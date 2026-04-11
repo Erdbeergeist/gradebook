@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from app.dependencies import ActiveUser, DbSession
-from app.schemas.classes import ClassCreate, ClassRead
+from app.schemas.classes import ClassCreate, ClassRead, ClassGradebookRead
 from app.services import classes_service
 
 
@@ -57,6 +57,32 @@ def list_classes(
         school_id=current_user.school_id,
         teacher_id=teacher_id,
     )
+
+
+@router.get("/{class_id}/gradebook", response_model=ClassGradebookRead)
+def get_class_gradebook(
+    class_id: UUID,
+    db: DbSession,
+    current_user: ActiveUser,
+):
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current user is not associated with a school.",
+        )
+
+    gradebook = classes_service.get_class_gradebook(
+        db=db,
+        class_id=class_id,
+        school_id=current_user.school_id,
+    )
+    if gradebook is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Class not found.",
+        )
+
+    return gradebook
 
 
 @router.get("/{class_id}", response_model=ClassRead)
