@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.classes import Class
 from app.models.exams import Exam
 from app.models.grading_schemas import GradingSchema, GradingSchemaType
-from app.schemas.exams import ExamCreate
+from app.schemas.exams import ExamCreate, ExamUpdate
 from app.services import grading_schemas_service
 
 
@@ -85,6 +85,45 @@ def get_exam(
         select(Exam).where(Exam.id == exam_id).where(Exam.school_id == school_id)
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def update_exam(
+    db: Session,
+    school_id: UUID,
+    exam_id: UUID,
+    payload: ExamUpdate,
+) -> tuple[str, Exam | None]:
+    exam = db.execute(
+        select(Exam).where(Exam.id == exam_id).where(Exam.school_id == school_id)
+    ).scalar_one_or_none()
+
+    if exam is None:
+        return "exam_not_found", None
+
+    grading_schema = db.execute(
+        select(GradingSchema)
+        .where(GradingSchema.id == exam.grading_schema_id)
+        .where(GradingSchema.school_id == school_id)
+    ).scalar_one_or_none()
+
+    if grading_schema is None:
+        return "grading_schema_not_found", None
+
+    if (
+        grading_schema.scheme_type == GradingSchemaType.POINTS
+        and payload.max_points != grading_schema.max_points
+    ):
+        return "points_schema_max_points_mismatch", None
+
+    exam.name = payload.name
+    exam.exam_type = payload.exam_type
+    exam.exam_type_detail = payload.exam_type_detail
+    exam.max_points = payload.max_points
+    exam.weight = payload.weight
+
+    db.commit()
+    db.refresh(exam)
+    return "updated", exam
 
 
 def list_exams(

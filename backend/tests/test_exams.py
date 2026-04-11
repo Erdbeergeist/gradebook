@@ -585,3 +585,224 @@ def test_get_exam_from_other_school_returns_404(client, db_session, test_user):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Exam not found."
+
+
+def test_update_exam(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Percentage Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.put(
+        f"/exams/{exam.id}",
+        json={
+            "name": "Updated Midterm",
+            "exam_type": "written",
+            "exam_type_detail": "short_answer",
+            "max_points": "120.00",
+            "weight": "1.50",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == str(exam.id)
+    assert data["name"] == "Updated Midterm"
+    assert data["exam_type"] == "written"
+    assert data["exam_type_detail"] == "short_answer"
+    assert Decimal(data["max_points"]) == Decimal("120.00")
+    assert Decimal(data["weight"]) == Decimal("1.50")
+    assert data["grading_schema_id"] == str(grading_schema.id)
+
+
+def test_update_exam_not_found(client):
+    response = client.put(
+        "/exams/00000000-0000-0000-0000-000000000999",
+        json={
+            "name": "Updated Midterm",
+            "exam_type": "written",
+            "exam_type_detail": "essay",
+            "max_points": "100.00",
+            "weight": "1.00",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Exam not found."
+
+
+def test_update_exam_from_other_school_returns_404(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    other_school = School(name="Other School")
+    db_session.add(other_school)
+    db_session.commit()
+    db_session.refresh(other_school)
+
+    other_teacher = Teacher(
+        school_id=other_school.id,
+        name="Other Teacher",
+    )
+    db_session.add(other_teacher)
+    db_session.commit()
+    db_session.refresh(other_teacher)
+
+    other_schema = GradingSchema(
+        school_id=other_school.id,
+        teacher_id=other_teacher.id,
+        name="Other Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(other_schema)
+    db_session.commit()
+    db_session.refresh(other_schema)
+
+    other_class = Class(
+        school_id=other_school.id,
+        teacher_id=other_teacher.id,
+        name="Foreign Class",
+    )
+    db_session.add(other_class)
+    db_session.commit()
+    db_session.refresh(other_class)
+
+    exam = Exam(
+        school_id=other_school.id,
+        class_id=other_class.id,
+        grading_schema_id=other_schema.id,
+        name="Foreign Exam",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamType.ESSAY if False else ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.put(
+        f"/exams/{exam.id}",
+        json={
+            "name": "Updated Foreign Exam",
+            "exam_type": "written",
+            "exam_type_detail": "essay",
+            "max_points": "100.00",
+            "weight": "1.00",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Exam not found."
+
+
+def test_update_exam_with_points_schema_max_points_mismatch_returns_422(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="15 Point Schema",
+        scheme_type=GradingSchemaType.POINTS,
+        max_points=Decimal("15.00"),
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Quiz",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.SHORT_ANSWER,
+        max_points=Decimal("15.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.put(
+        f"/exams/{exam.id}",
+        json={
+            "name": "Updated Quiz",
+            "exam_type": "written",
+            "exam_type_detail": "short_answer",
+            "max_points": "20.00",
+            "weight": "1.00",
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Exam max_points must equal grading schema max_points for points-based schemas."
+    )

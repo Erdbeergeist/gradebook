@@ -71,3 +71,11 @@ class ExamRead(BaseModel):
     grading_schema_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class ExamUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    exam_type: ExamType
+    exam_type_detail: ExamTypeDetail
+    max_points: Decimal = Field(gt=0)
+    weight: Decimal = Field(gt=0)
