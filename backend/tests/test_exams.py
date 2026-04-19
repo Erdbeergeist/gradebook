@@ -1,4 +1,5 @@
 from decimal import Decimal
+from sqlalchemy import select
 
 from app.models.classes import Class
 from app.models.exams import Exam, ExamType, ExamTypeDetail
@@ -798,6 +799,398 @@ def test_update_exam_with_points_schema_max_points_mismatch_returns_422(
             "exam_type_detail": "short_answer",
             "max_points": "20.00",
             "weight": "1.00",
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Exam max_points must equal grading schema max_points for points-based schemas."
+    )
+
+
+def test_apply_grading_schema_template_to_exam(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    original_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Original Exam Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    template_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Replacement Template",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=True,
+        is_system=False,
+    )
+    db_session.add_all([original_schema, template_schema])
+    db_session.commit()
+    db_session.refresh(original_schema)
+    db_session.refresh(template_schema)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=original_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/exams/{exam.id}/apply-grading-schema-template",
+        json={
+            "template_grading_schema_id": str(template_schema.id),
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["id"] == str(exam.id)
+    assert data["grading_schema_id"] != str(original_schema.id)
+
+    db_session.refresh(exam)
+    assert exam.grading_schema_id != original_schema.id
+
+    new_schema = db_session.execute(
+        select(GradingSchema).where(GradingSchema.id == exam.grading_schema_id)
+    ).scalar_one()
+
+    assert new_schema.source_schema_id == template_schema.id
+    assert new_schema.is_template is False
+    assert new_schema.is_system is False
+    assert new_schema.teacher_id == teacher.id
+
+
+def test_apply_grading_schema_template_to_unknown_exam_returns_404(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    template_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Replacement Template",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=True,
+        is_system=False,
+    )
+    db_session.add(template_schema)
+    db_session.commit()
+    db_session.refresh(template_schema)
+
+    response = client.post(
+        "/exams/00000000-0000-0000-0000-000000000999/apply-grading-schema-template",
+        json={
+            "template_grading_schema_id": str(template_schema.id),
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Exam not found."
+
+
+def test_apply_unknown_grading_schema_template_to_exam_returns_404(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    original_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Original Exam Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(original_schema)
+    db_session.commit()
+    db_session.refresh(original_schema)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=original_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/exams/{exam.id}/apply-grading-schema-template",
+        json={
+            "template_grading_schema_id": "00000000-0000-0000-0000-000000000999",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Grading schema not found."
+
+
+def test_apply_non_template_grading_schema_to_exam_returns_422(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    original_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Original Exam Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    non_template_source = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Not A Template",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add_all([original_schema, non_template_source])
+    db_session.commit()
+    db_session.refresh(original_schema)
+    db_session.refresh(non_template_source)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=original_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/exams/{exam.id}/apply-grading-schema-template",
+        json={
+            "template_grading_schema_id": str(non_template_source.id),
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Only template grading schemas can be applied to an exam."
+    )
+
+
+def test_apply_grading_schema_template_with_other_teacher_returns_422(
+    client, db_session, test_user
+):
+    teacher_1 = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    teacher_2 = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher Two",
+    )
+    db_session.add_all([teacher_1, teacher_2])
+    db_session.commit()
+    db_session.refresh(teacher_1)
+    db_session.refresh(teacher_2)
+
+    original_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher_1.id,
+        name="Original Exam Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    foreign_template = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher_2.id,
+        name="Teacher Two Template",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=True,
+        is_system=False,
+    )
+    db_session.add_all([original_schema, foreign_template])
+    db_session.commit()
+    db_session.refresh(original_schema)
+    db_session.refresh(foreign_template)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher_1.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=original_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/exams/{exam.id}/apply-grading-schema-template",
+        json={
+            "template_grading_schema_id": str(foreign_template.id),
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Grading schema teacher does not match the class teacher."
+    )
+
+
+def test_apply_points_grading_schema_template_with_max_points_mismatch_returns_422(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    original_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Original Exam Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    points_template = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="15 Point Template",
+        scheme_type=GradingSchemaType.POINTS,
+        max_points=Decimal("15.00"),
+        is_template=True,
+        is_system=False,
+    )
+    db_session.add_all([original_schema, points_template])
+    db_session.commit()
+    db_session.refresh(original_schema)
+    db_session.refresh(points_template)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=original_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/exams/{exam.id}/apply-grading-schema-template",
+        json={
+            "template_grading_schema_id": str(points_template.id),
         },
     )
 

@@ -3,7 +3,12 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from app.dependencies import ActiveUser, DbSession
-from app.schemas.exams import ExamCreate, ExamRead, ExamUpdate
+from app.schemas.exams import (
+    ExamCreate,
+    ExamRead,
+    ExamUpdate,
+    ExamApplyGradingSchemaTemplateRequest,
+)
 from app.services import exams_service
 
 
@@ -140,6 +145,60 @@ def get_exam(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Exam not found.",
+        )
+
+    return exam
+
+
+@router.post("/{exam_id}/apply-grading-schema-template", response_model=ExamRead)
+def apply_grading_schema_template_to_exam(
+    exam_id: UUID,
+    payload: ExamApplyGradingSchemaTemplateRequest,
+    db: DbSession,
+    current_user: ActiveUser,
+):
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current user is not associated with a school.",
+        )
+
+    result, exam = exams_service.apply_grading_schema_template_to_exam(
+        db=db,
+        school_id=current_user.school_id,
+        exam_id=exam_id,
+        template_grading_schema_id=payload.template_grading_schema_id,
+    )
+
+    if result == "exam_not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exam not found.",
+        )
+    if result == "class_not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Class not found.",
+        )
+    if result == "grading_schema_not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Grading schema not found.",
+        )
+    if result == "grading_schema_not_template":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only template grading schemas can be applied to an exam.",
+        )
+    if result == "grading_schema_teacher_mismatch":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Grading schema teacher does not match the class teacher.",
+        )
+    if result == "points_schema_max_points_mismatch":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Exam max_points must equal grading schema max_points for points-based schemas.",
         )
 
     return exam

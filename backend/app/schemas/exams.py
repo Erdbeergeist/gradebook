@@ -79,3 +79,7 @@ class ExamUpdate(BaseModel):
     exam_type_detail: ExamTypeDetail
     max_points: Decimal = Field(gt=0)
     weight: Decimal = Field(gt=0)
+
+
+class ExamApplyGradingSchemaTemplateRequest(BaseModel):
+    template_grading_schema_id: UUID

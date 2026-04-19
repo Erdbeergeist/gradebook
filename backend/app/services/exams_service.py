@@ -145,3 +145,68 @@ def list_exams(
     statement = statement.order_by(Exam.created_at.asc())
 
     return list(db.execute(statement).scalars().all())
+
+
+def apply_grading_schema_template_to_exam(
+    db: Session,
+    school_id: UUID,
+    exam_id: UUID,
+    template_grading_schema_id: UUID,
+) -> tuple[str, Exam | None]:
+    exam = db.execute(
+        select(Exam).where(Exam.id == exam_id).where(Exam.school_id == school_id)
+    ).scalar_one_or_none()
+    if exam is None:
+        return "exam_not_found", None
+
+    class_ = db.execute(
+        select(Class)
+        .where(Class.id == exam.class_id)
+        .where(Class.school_id == school_id)
+    ).scalar_one_or_none()
+    if class_ is None:
+        return "class_not_found", None
+
+    source_schema = db.execute(
+        select(GradingSchema)
+        .where(GradingSchema.id == template_grading_schema_id)
+        .where(GradingSchema.school_id == school_id)
+    ).scalar_one_or_none()
+    if source_schema is None:
+        return "grading_schema_not_found", None
+
+    if not grading_schemas_service.is_template_schema(source_schema):
+        return "grading_schema_not_template", None
+
+    if source_schema.teacher_id != class_.teacher_id:
+        return "grading_schema_teacher_mismatch", None
+
+    if (
+        source_schema.scheme_type == GradingSchemaType.POINTS
+        and source_schema.max_points != exam.max_points
+    ):
+        return "points_schema_max_points_mismatch", None
+
+    clone_result, cloned_schema = grading_schemas_service.clone_grading_schema(
+        db=db,
+        school_id=school_id,
+        source_schema_id=source_schema.id,
+        teacher_id=class_.teacher_id,
+        name=source_schema.name,
+        as_template=False,
+    )
+
+    if clone_result == "source_schema_not_found":
+        return "grading_schema_not_found", None
+    if clone_result == "teacher_not_found":
+        return "class_not_found", None
+    if clone_result == "source_schema_not_clonable":
+        return "grading_schema_not_template", None
+    if cloned_schema is None:
+        return "grading_schema_not_found", None
+
+    exam.grading_schema_id = cloned_schema.id
+
+    db.commit()
+    db.refresh(exam)
+    return "updated", exam
