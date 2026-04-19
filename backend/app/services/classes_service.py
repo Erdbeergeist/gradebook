@@ -1,5 +1,6 @@
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session, selectinload
+from collections import Counter
 from uuid import UUID
 
 from app.models.classes import Class
@@ -15,6 +16,7 @@ from app.schemas.classes import (
     GradebookCellRead,
     GradebookExamRead,
     GradebookStudentRead,
+    ClassGradebookBulkUpsertRequest,
 )
 from app.schemas.exam_results import ExamResultRead
 from app.services.exam_results_service import (
@@ -169,3 +171,125 @@ def get_class_gradebook(
         exams=[GradebookExamRead.model_validate(exam) for exam in exams],
         cells=cells,
     )
+
+
+def bulk_upsert_class_gradebook_results(
+    db: Session,
+    school_id: UUID,
+    class_id: UUID,
+    payload: ClassGradebookBulkUpsertRequest,
+) -> tuple[str, list[ExamResultRead] | None]:
+    class_ = db.execute(
+        select(Class).where(Class.id == class_id).where(Class.school_id == school_id)
+    ).scalar_one_or_none()
+    if class_ is None:
+        return "class_not_found", None
+
+    pair_counts = Counter((item.exam_id, item.student_id) for item in payload.items)
+    duplicate_pairs = [pair for pair, count in pair_counts.items() if count > 1]
+    if duplicate_pairs:
+        return "duplicate_pairs_in_payload", None
+
+    exam_ids = sorted({item.exam_id for item in payload.items}, key=str)
+    student_ids = sorted({item.student_id for item in payload.items}, key=str)
+
+    exams = list(
+        db.execute(
+            select(Exam)
+            .where(Exam.id.in_(exam_ids))
+            .where(Exam.school_id == school_id)
+            .where(Exam.class_id == class_id)
+        )
+        .scalars()
+        .all()
+    )
+    exams_by_id = {exam.id: exam for exam in exams}
+    if len(exams_by_id) != len(exam_ids):
+        return "exam_not_in_class", None
+
+    students = list(
+        db.execute(
+            select(Student)
+            .where(Student.id.in_(student_ids))
+            .where(Student.school_id == school_id)
+        )
+        .scalars()
+        .all()
+    )
+    students_by_id = {student.id: student for student in students}
+    if len(students_by_id) != len(student_ids):
+        return "student_not_found", None
+
+    enrolled_student_ids = set(
+        db.execute(
+            select(Enrollment.student_id)
+            .where(Enrollment.class_id == class_id)
+            .where(Enrollment.student_id.in_(student_ids))
+        )
+        .scalars()
+        .all()
+    )
+    if enrolled_student_ids != set(student_ids):
+        return "student_not_enrolled", None
+
+    for item in payload.items:
+        exam = exams_by_id[item.exam_id]
+        if item.points is not None and item.points > exam.max_points:
+            return "points_exceed_max", None
+
+    existing_results = list(
+        db.execute(
+            select(ExamResult).where(
+                tuple_(ExamResult.exam_id, ExamResult.student_id).in_(
+                    [(item.exam_id, item.student_id) for item in payload.items]
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    existing_by_pair = {
+        (result.exam_id, result.student_id): result for result in existing_results
+    }
+
+    touched_ids: list[UUID] = []
+
+    for item in payload.items:
+        pair = (item.exam_id, item.student_id)
+        existing = existing_by_pair.get(pair)
+
+        if existing is None:
+            new_result = ExamResult(
+                exam_id=item.exam_id,
+                student_id=item.student_id,
+                points=item.points,
+                comment=item.comment,
+                status=item.status,
+                graded_at=item.graded_at,
+            )
+            db.add(new_result)
+            db.flush()
+            touched_ids.append(new_result.id)
+        else:
+            existing.points = item.points
+            existing.comment = item.comment
+            existing.status = item.status
+            existing.graded_at = item.graded_at
+            touched_ids.append(existing.id)
+
+    db.commit()
+
+    touched_results = list(
+        db.execute(
+            select(ExamResult)
+            .options(*_exam_result_load_options())
+            .where(ExamResult.id.in_(touched_ids))
+        )
+        .scalars()
+        .all()
+    )
+    touched_by_id = {result.id: result for result in touched_results}
+
+    return "upserted", [
+        _to_exam_result_read(touched_by_id[result_id]) for result_id in touched_ids
+    ]

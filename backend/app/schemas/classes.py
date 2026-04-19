@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.exam_results import ExamResultStatus
+from app.schemas.exam_results import ExamResultRead
 from app.models.exams import ExamType, ExamTypeDetail
 
 
@@ -63,3 +64,20 @@ class ClassGradebookRead(BaseModel):
     students: list[GradebookStudentRead]
     exams: list[GradebookExamRead]
     cells: list[GradebookCellRead]
+
+
+class GradebookCellUpsertInput(BaseModel):
+    exam_id: UUID
+    student_id: UUID
+    points: Decimal | None = Field(default=None, ge=0)
+    comment: str | None = Field(default=None, max_length=2000)
+    status: ExamResultStatus | None = None
+    graded_at: datetime | None = None
+
+
+class ClassGradebookBulkUpsertRequest(BaseModel):
+    items: list[GradebookCellUpsertInput] = Field(min_length=1)
+
+
+class ClassGradebookBulkUpsertResponse(BaseModel):
+    items: list[ExamResultRead]

@@ -1,5 +1,6 @@
 from uuid import uuid4
 from decimal import Decimal
+from datetime import datetime, timezone
 
 from app.models.enrollments import Enrollment
 from app.models.exam_results import ExamResult, ExamResultStatus
@@ -533,3 +534,494 @@ def test_get_class_gradebook_orders_students_by_name(client, db_session, test_us
         ("Alpha", "Zoe"),
         ("Zulu", "Bob"),
     ]
+
+
+def test_bulk_upsert_class_gradebook_results(client, db_session, test_user):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Percentage Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.flush()
+
+    grade_1 = GradingSchemaGrade(
+        grading_schema_id=grading_schema.id,
+        label="1",
+        sort_order=10,
+    )
+    grade_2 = GradingSchemaGrade(
+        grading_schema_id=grading_schema.id,
+        label="2",
+        sort_order=20,
+    )
+    db_session.add_all([grade_1, grade_2])
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            GradingSchemaRange(
+                grading_schema_id=grading_schema.id,
+                grade_id=grade_1.id,
+                min_value=Decimal("90.00"),
+                max_value=Decimal("100.00"),
+                min_inclusive=True,
+                max_inclusive=True,
+            ),
+            GradingSchemaRange(
+                grading_schema_id=grading_schema.id,
+                grade_id=grade_2.id,
+                min_value=Decimal("80.00"),
+                max_value=Decimal("90.00"),
+                min_inclusive=True,
+                max_inclusive=False,
+            ),
+        ]
+    )
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    student_1 = Student(
+        school_id=test_user.school_id,
+        first_name="Ada",
+        last_name="Lovelace",
+    )
+    student_2 = Student(
+        school_id=test_user.school_id,
+        first_name="Grace",
+        last_name="Hopper",
+    )
+    db_session.add_all([student_1, student_2])
+    db_session.commit()
+    db_session.refresh(student_1)
+    db_session.refresh(student_2)
+
+    db_session.add_all(
+        [
+            Enrollment(class_id=class_.id, student_id=student_1.id),
+            Enrollment(class_id=class_.id, student_id=student_2.id),
+        ]
+    )
+    db_session.commit()
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    existing_result = ExamResult(
+        exam_id=exam.id,
+        student_id=student_1.id,
+        points=Decimal("80.00"),
+        comment="Old comment",
+        status=ExamResultStatus.PRESENT,
+    )
+    db_session.add(existing_result)
+    db_session.commit()
+    db_session.refresh(existing_result)
+
+    graded_at = datetime.now(timezone.utc).isoformat()
+
+    response = client.post(
+        f"/classes/{class_.id}/gradebook/bulk-upsert",
+        json={
+            "items": [
+                {
+                    "exam_id": str(exam.id),
+                    "student_id": str(student_1.id),
+                    "points": "92.00",
+                    "comment": "Updated",
+                    "status": "present",
+                    "graded_at": graded_at,
+                },
+                {
+                    "exam_id": str(exam.id),
+                    "student_id": str(student_2.id),
+                    "points": "84.00",
+                    "comment": "Created",
+                    "status": "present",
+                    "graded_at": graded_at,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["items"]
+    assert len(data) == 2
+
+    first = data[0]
+    assert first["exam_id"] == str(exam.id)
+    assert first["student_id"] == str(student_1.id)
+    assert first["points"] == "92.00"
+    assert first["comment"] == "Updated"
+    assert first["resolved_grade_label"] == "1"
+
+    second = data[1]
+    assert second["exam_id"] == str(exam.id)
+    assert second["student_id"] == str(student_2.id)
+    assert second["points"] == "84.00"
+    assert second["comment"] == "Created"
+    assert second["resolved_grade_label"] == "2"
+
+
+def test_bulk_upsert_class_gradebook_results_rejects_duplicate_pairs(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    student = Student(
+        school_id=test_user.school_id,
+        first_name="Ada",
+        last_name="Lovelace",
+    )
+    db_session.add(student)
+    db_session.commit()
+    db_session.refresh(student)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/classes/{class_.id}/gradebook/bulk-upsert",
+        json={
+            "items": [
+                {
+                    "exam_id": str(exam.id),
+                    "student_id": str(student.id),
+                    "points": "80.00",
+                    "comment": None,
+                    "status": "present",
+                    "graded_at": None,
+                },
+                {
+                    "exam_id": str(exam.id),
+                    "student_id": str(student.id),
+                    "points": "81.00",
+                    "comment": None,
+                    "status": "present",
+                    "graded_at": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Duplicate exam/student pairs are not allowed in one bulk upsert request."
+    )
+
+
+def test_bulk_upsert_class_gradebook_results_student_not_enrolled_returns_404(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    student = Student(
+        school_id=test_user.school_id,
+        first_name="Ada",
+        last_name="Lovelace",
+    )
+    db_session.add(student)
+    db_session.commit()
+    db_session.refresh(student)
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/classes/{class_.id}/gradebook/bulk-upsert",
+        json={
+            "items": [
+                {
+                    "exam_id": str(exam.id),
+                    "student_id": str(student.id),
+                    "points": "80.00",
+                    "comment": None,
+                    "status": "present",
+                    "graded_at": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 404
+    assert (
+        response.json()["detail"]
+        == "One or more students are not enrolled in this class."
+    )
+
+
+def test_bulk_upsert_class_gradebook_results_exam_not_in_class_returns_404(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    class_1 = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    class_2 = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10B",
+    )
+    db_session.add_all([class_1, class_2])
+    db_session.commit()
+    db_session.refresh(class_1)
+    db_session.refresh(class_2)
+
+    student = Student(
+        school_id=test_user.school_id,
+        first_name="Ada",
+        last_name="Lovelace",
+    )
+    db_session.add(student)
+    db_session.commit()
+    db_session.refresh(student)
+
+    db_session.add(Enrollment(class_id=class_1.id, student_id=student.id))
+    db_session.commit()
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    foreign_exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_2.id,
+        grading_schema_id=grading_schema.id,
+        name="Foreign Exam",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(foreign_exam)
+    db_session.commit()
+    db_session.refresh(foreign_exam)
+
+    response = client.post(
+        f"/classes/{class_1.id}/gradebook/bulk-upsert",
+        json={
+            "items": [
+                {
+                    "exam_id": str(foreign_exam.id),
+                    "student_id": str(student.id),
+                    "points": "80.00",
+                    "comment": None,
+                    "status": "present",
+                    "graded_at": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 404
+    assert (
+        response.json()["detail"] == "One or more exams were not found in this class."
+    )
+
+
+def test_bulk_upsert_class_gradebook_results_points_exceed_max_returns_422(
+    client, db_session, test_user
+):
+    teacher = Teacher(
+        school_id=test_user.school_id,
+        name="Teacher One",
+    )
+    db_session.add(teacher)
+    db_session.commit()
+    db_session.refresh(teacher)
+
+    class_ = Class(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Math 10A",
+    )
+    db_session.add(class_)
+    db_session.commit()
+    db_session.refresh(class_)
+
+    student = Student(
+        school_id=test_user.school_id,
+        first_name="Ada",
+        last_name="Lovelace",
+    )
+    db_session.add(student)
+    db_session.commit()
+    db_session.refresh(student)
+
+    db_session.add(Enrollment(class_id=class_.id, student_id=student.id))
+    db_session.commit()
+
+    grading_schema = GradingSchema(
+        school_id=test_user.school_id,
+        teacher_id=teacher.id,
+        name="Schema",
+        scheme_type=GradingSchemaType.PERCENTAGE,
+        max_points=None,
+        is_template=False,
+        is_system=False,
+    )
+    db_session.add(grading_schema)
+    db_session.commit()
+    db_session.refresh(grading_schema)
+
+    exam = Exam(
+        school_id=test_user.school_id,
+        class_id=class_.id,
+        grading_schema_id=grading_schema.id,
+        name="Midterm",
+        exam_type=ExamType.WRITTEN,
+        exam_type_detail=ExamTypeDetail.ESSAY,
+        max_points=Decimal("100.00"),
+        weight=Decimal("1.00"),
+    )
+    db_session.add(exam)
+    db_session.commit()
+    db_session.refresh(exam)
+
+    response = client.post(
+        f"/classes/{class_.id}/gradebook/bulk-upsert",
+        json={
+            "items": [
+                {
+                    "exam_id": str(exam.id),
+                    "student_id": str(student.id),
+                    "points": "101.00",
+                    "comment": None,
+                    "status": "present",
+                    "graded_at": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Points cannot exceed exam max_points."
