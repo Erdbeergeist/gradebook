@@ -1,53 +1,52 @@
 import { useEffect, useState } from "react";
 import { listClasses, type ClassRead } from "../api/classes";
 
-export default function ClassListPage() {
+type ClassListPageProps = {
+    teacherId: string;
+};
+
+export default function ClassListPage({ teacherId }: ClassListPageProps) {
     const [classes, setClasses] = useState<ClassRead[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        async function load() {
+        async function loadClasses() {
             try {
                 setIsLoading(true);
                 setError(null);
-                const data = await listClasses();
+
+                const data = await listClasses(teacherId);
                 setClasses(data);
             } catch (err) {
-                const message =
-                    err instanceof Error ? err.message : "Unknown error";
-                setError(message);
+                setError(err instanceof Error ? err.message : "Unknown error");
             } finally {
                 setIsLoading(false);
             }
         }
 
-        void load();
-    }, []);
-
-    if (isLoading) {
-        return <p>Loading classes...</p>;
-    }
-
-    if (error) {
-        return <p>Error: {error}</p>;
-    }
+        void loadClasses();
+    }, [teacherId]);
 
     return (
-        <div style={{ padding: "2rem" }}>
+        <main style={{ padding: "2rem" }}>
             <h2>Classes</h2>
 
-            {classes.length === 0 ? (
-                <p>No classes found.</p>
-            ) : (
+            {isLoading && <p>Loading classes...</p>}
+
+            {!isLoading && error && <p>Error: {error}</p>}
+
+            {!isLoading && !error && classes.length === 0 && (
+                <p>No classes found for this teacher.</p>
+            )}
+
+            {!isLoading && !error && classes.length > 0 && (
                 <ul>
                     {classes.map((classItem) => (
-                        <li key={classItem.id}>
-                            {classItem.name}
-                        </li>
+                        <li key={classItem.id}>{classItem.name}</li>
                     ))}
                 </ul>
             )}
-        </div>
+        </main>
     );
 }

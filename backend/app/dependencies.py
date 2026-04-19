@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db_session
 from app.authz import *
 
+from app.core.dev_constants import DEV_SCHOOL_ID, DEV_USER_ID
 
 DbSession = Annotated[Session, Depends(get_db_session)]
 
@@ -21,15 +22,9 @@ class CurrentUserContext:
 
 
 def get_current_user() -> CurrentUserContext:
-    """
-    Development-only auth stub.
-
-    Later this will be replaced by real authentication and token/session parsing.
-    For now it returns a fixed active school admin context.
-    """
     return CurrentUserContext(
-        user_id=UUID("00000000-0000-0000-0000-000000000001"),
-        school_id=UUID("00000000-0000-0000-0000-000000000100"),
+        user_id=DEV_USER_ID,
+        school_id=DEV_SCHOOL_ID,
         role=ROLE_SUPERUSER,
         is_active=True,
     )

@@ -1,5 +1,11 @@
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.core.seed import seed_dev_data
+from app.database import SessionLocal
 
 from app.config import get_settings
 from app.models import enrollments
@@ -16,7 +22,23 @@ from app.routers import (
 
 settings = get_settings()
 
+ENABLE_DEV_SEED = os.getenv("ENABLE_DEV_SEED", "false").lower() == "true"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if ENABLE_DEV_SEED:
+        db = SessionLocal()
+        try:
+            seed_dev_data(db)
+        finally:
+            db.close()
+
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
