@@ -30,14 +30,5 @@ services:
     ports:
       - "8000:8000"
 
-  frontend:
-    build: ./frontend
-    platform: linux/amd64
-    restart: unless-stopped
-    depends_on:
-      - backend
-    ports:
-      - "3838:3838"
-
 volumes:
   postgres_data:
